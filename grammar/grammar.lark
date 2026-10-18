@@ -1,0 +1,41 @@
+?prog: "begin" stm "end" -> program
+
+?stm: seq_stm
+    | base_stm
+
+?seq_stm: stm ";" base_stm -> sequential_execution
+
+?base_stm: VAR ":=" aexp -> assignment
+         | "if" bexp "then" base_stm "else" base_stm -> if_statement
+         | "while" bexp "do" base_stm -> while_cycle
+         | "begin" stm "end" -> block
+         | "skip" -> skip
+
+?aexp: aexp "+" product  -> add
+     | aexp "-" product  -> sub
+     | product
+
+?product: product "*" term -> mult
+        | term
+
+?term: NUMBER -> number
+     | VAR -> variable
+     | "(" aexp ")"
+
+?bexp: or_bexp
+
+?or_bexp: or_bexp ("or" | "∨") not_bexp -> or
+        | not_bexp
+
+?not_bexp: ("not" | "¬") not_bexp -> not
+         | comp_bexp
+
+?comp_bexp: aexp "=" aexp -> eq
+          | aexp ">" aexp -> gr
+          | "(" bexp ")"
+
+VAR: /(?!(?:begin|end|if|then|else|while|do|skip|or|not)\b)[A-Za-z_][A-Za-z0-9_]*/
+NUMBER: /-?[0-9]+/
+
+%import common.WS
+%ignore WS
