@@ -20,19 +20,19 @@
 
 ?term: NUMBER -> number
      | VAR -> variable
-     | "(" aexp ")"
+     | "(" aexp ")" -> paren_expr
 
 ?bexp: or_bexp
 
-?or_bexp: or_bexp ("or" | "∨") not_bexp -> or
+?or_bexp: or_bexp ("or" | "∨") not_bexp -> logic_or
         | not_bexp
 
-?not_bexp: ("not" | "¬") not_bexp -> not
+?not_bexp: ("not" | "¬") not_bexp -> logic_not
          | comp_bexp
 
 ?comp_bexp: aexp "=" aexp -> eq
           | aexp ">" aexp -> gr
-          | "(" bexp ")"
+          | "(" bexp ")" -> paren_cond
 
 VAR: /(?!(?:begin|end|if|then|else|while|do|skip|or|not)\b)[A-Za-z_][A-Za-z0-9_]*/
 NUMBER: /-?[0-9]+/
