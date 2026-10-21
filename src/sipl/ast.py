@@ -96,37 +96,33 @@ class CompareOperation(Node):
 
 
 class LogicalOrNode(Node):
-    def __init__(self, op, left, right, span=None):
+    def __init__(self, left, right, span=None):
         super().__init__(span)
-        self.op = str(op)
         self.left = left
         self.right = right
 
     def __repr__(self):
-        return f"LogicalOrNode(left={self.left}, op='{self.op}', right={self.right}, span={self.span})"
+        return f"LogicalOrNode(left={self.left}, right={self.right}, span={self.span})"
 
     def __eq__(self, other):
         if type(other) is not type(self):
             return NotImplemented
         return (self.left == other.left and
-                self.op == other.op and
                 self.right == other.right)
 
 
 class NotNode(Node):
-    def __init__(self, op, right, span=None):
+    def __init__(self, expression, span=None):
         super().__init__(span)
-        self.op = str(op)
-        self.right = right
+        self.expression = expression
 
     def __repr__(self):
-        return f"NotNode(op='{self.op}', right={self.right}, span={self.span})"
+        return f"NotNode(expression={self.expression}, span={self.span})"
 
     def __eq__(self, other):
         if type(other) is not type(self):
             return NotImplemented
-        return (self.op == other.op and
-                self.right == other.right)
+        return self.expression == other.expression
 
 
 class AssignStmt(Node):

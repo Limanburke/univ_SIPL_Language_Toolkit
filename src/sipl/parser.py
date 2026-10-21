@@ -67,10 +67,10 @@ def build_ast(node):
         return CompareOperation(op='>', left=children[0], right=children[1], span=span)
 
     elif rule_name == 'logic_or':
-        return LogicalOrNode(op='or', left=children[0], right=children[1], span=span)
+        return LogicalOrNode(left=children[0], right=children[1], span=span)
 
     elif rule_name == 'logic_not':
-        return NotNode(op='not', right=children[0], span=span)
+        return NotNode(expression=children[0], span=span)
 
     elif rule_name == 'assignment':
         return AssignStmt(var=str(children[0]), expression=children[1], span=span)

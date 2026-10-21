@@ -1,5 +1,8 @@
 import pytest
-from src.sipl.parser import parse, SIPLSyntaxError
+from lark import Tree, Token
+from lark.exceptions import UnexpectedToken
+from unittest.mock import patch
+from src.sipl.parser import parse, SIPLSyntaxError, _make_span, build_ast
 from src.sipl.ast import (
     Program, AssignStmt, BinaryOperation, Number, Variable,
     IfStmt, WhileStmt, SkipStmt, LogicalOrNode, NotNode, CompareOperation,
@@ -48,8 +51,8 @@ def test_ast_condition_and_while():
     loop = ast.statement
     assert isinstance(loop, WhileStmt)
     assert isinstance(loop.condition, NotNode)
-    assert isinstance(loop.condition.right, CompareOperation)
-    assert loop.condition.right.op == ">"
+    assert isinstance(loop.condition.expression, CompareOperation)
+    assert loop.condition.expression.op == ">"
     assert isinstance(loop.do_action, SkipStmt)
 
 
@@ -95,32 +98,21 @@ def test_logical_or_node():
     ast = parse(code)
     condition = ast.statement.condition
     assert isinstance(condition, LogicalOrNode)
-    assert condition.op == "or"
     assert isinstance(condition.left, CompareOperation)
     assert condition.left.op == ">"
     assert isinstance(condition.right, CompareOperation)
     assert condition.right.op == "="
 
 
-def test_logical_or_with_symbol_operator():
-    code = "begin if x > 0 ∨ y = 0 then skip else skip end"
-    ast = parse(code)
-    condition = ast.statement.condition
-    assert isinstance(condition, LogicalOrNode)
-    assert condition.left.op == ">"
-    assert condition.right.op == "="
-
-
-def test_logical_not_with_both_spellings():
-    for operator in ("not", "¬"):
+def test_logical_not():
         code = (
-            f"begin if {operator} (x > 0) "
+            f"begin if not (x > 0) "
             "then skip else skip end"
         )
         ast = parse(code)
         condition = ast.statement.condition
         assert isinstance(condition, NotNode)
-        assert isinstance(condition.right, CompareOperation)
+        assert isinstance(condition.expression, CompareOperation)
 
 
 def test_nested_if_statement():
@@ -228,3 +220,87 @@ def test_missing_end_reports_syntax_error():
 def test_reserved_word_is_not_a_variable():
     with pytest.raises(SIPLSyntaxError):
         parse("begin if := 2 end")
+
+
+def test_make_span_without_line_returns_none():
+    class DummyMeta:
+        line = None
+    assert _make_span(DummyMeta()) is None
+
+
+def test_build_ast_returns_node_if_already_node():
+    dummy_node = Number(42)
+    assert build_ast(dummy_node) is dummy_node
+
+
+def test_build_ast_unhandled_rule_raises_value_error():
+    class FakeMeta:
+        line = 1
+        column = 1
+        end_line = 1
+        end_column = 1
+        start_pos = 0
+        end_pos = 0
+    fake_tree = Tree(data="unknown_bogus_rule", children=[], meta=FakeMeta())
+    with pytest.raises(ValueError, match="Unhandled grammar rule: 'unknown_bogus_rule'"):
+        build_ast(fake_tree)
+
+
+def test_unexpected_character_diagnostics():
+    code = "begin x := 1 y end"
+    with pytest.raises(SIPLSyntaxError) as exc_info:
+        parse(code)
+    err_msg = str(exc_info.value)
+    assert "Syntax error at line 1, column 14" in err_msg
+    assert "Unexpected character 'y'" in err_msg
+
+
+def test_unexpected_token_diagnostics():
+    code = "begin x := 1 end"
+    token = Token(
+        "VAR",
+        "y",
+        start_pos=13,
+        line=1,
+        column=14,
+        end_line=1,
+        end_column=15,
+        end_pos=14,
+    )
+    lark_error = UnexpectedToken(token, expected={"END", "SEMICOLON"})
+    with patch("src.sipl.parser.parser.parse", side_effect=lark_error):
+        with pytest.raises(SIPLSyntaxError) as exc_info:
+            parse(code)
+    err_msg = str(exc_info.value)
+    assert "Unexpected token 'y'" in err_msg
+    assert "Expected one of: END, SEMICOLON" in err_msg
+    assert exc_info.value.line == 1
+    assert exc_info.value.column == 14
+
+
+def test_unexpected_token_eof_diagnostics():
+    code = "begin skip"
+    token = Token(
+        "$END",
+        "",
+        start_pos=len(code),
+        line=1,
+        column=len(code) + 1,
+        end_line=1,
+        end_column=len(code) + 1,
+        end_pos=len(code),
+    )
+    lark_error = UnexpectedToken(token, expected={"END"})
+    with patch("src.sipl.parser.parser.parse", side_effect=lark_error):
+        with pytest.raises(SIPLSyntaxError) as exc_info:
+            parse(code)
+    err_msg = str(exc_info.value)
+    assert "Unexpected token EOF" in err_msg
+    assert "Expected one of: END" in err_msg
+
+
+def test_parse_fails_to_produce_program_node():
+    from unittest.mock import patch
+    with patch("src.sipl.parser.build_ast", return_value=SkipStmt()):
+        with pytest.raises(RuntimeError, match="Parser failed to produce a valid root Program node"):
+            parse("begin skip end")

@@ -24,10 +24,10 @@
 
 ?bexp: or_bexp
 
-?or_bexp: or_bexp ("or" | "∨") not_bexp -> logic_or
+?or_bexp: or_bexp "or" not_bexp -> logic_or
         | not_bexp
 
-?not_bexp: ("not" | "¬") not_bexp -> logic_not
+?not_bexp: "not" not_bexp -> logic_not
          | comp_bexp
 
 ?comp_bexp: aexp "=" aexp -> eq
