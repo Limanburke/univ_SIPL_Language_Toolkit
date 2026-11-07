@@ -8,11 +8,11 @@ Selected modules for implementation
 | **CORE-02** |  1.5   |  Done  |
 | **CORE-03** |  2.0   |  Done  |
 | **CORE-04** |  1.0   |  Done  |
-| **CORE-05** |  1.0   |  Todo  |
+| **CORE-05** |  1.0   |  Done  |
 | **SEM-01**  |  2.0   |  Todo  |
 | **SEM-02**  |  2.0   |  Todo  |
 
-Current points: 5/10
+Current points: 6/10
 
 Installing dependencies  
 pip install lark pytest pytest-cov

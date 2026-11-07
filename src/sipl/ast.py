@@ -40,6 +40,14 @@ class Node:
     def __repr__(self):
         return f"Node(span={self.span})"
 
+    def to_dict(self):
+        result = {"type": type(self).__name__}
+        for key, value in vars(self).items():
+            if key != "span":
+                result[key] = value.to_dict() if isinstance(value, Node) else value
+        result["span"] = self.span.to_dict() if self.span else None
+        return result
+
 
 class Number(Node):
     def __init__(self, value, span=None):
