@@ -11,7 +11,7 @@ class Visitor:
 
 
 class Interpreter(Visitor):
-    def __init__(self, max_steps=1_000_000, max_iterations=100_000):
+    def __init__(self, observer=None, max_steps=1_000_000, max_iterations=100_000):
         if max_steps is not None and (type(max_steps) is not int or max_steps <= 0):
             raise RuntimeError(f"Invalid max_steps: expected a positive integer or None, got {max_steps}")
         if max_iterations is not None and (type(max_iterations) is not int or max_iterations <= 0):
@@ -21,13 +21,24 @@ class Interpreter(Visitor):
         self.max_iterations = max_iterations
         self.steps = 0
         self.state = {}
+        self._observers = []
+        if observer is not None:
+            self.attach_observer(observer)
 
     def visit(self, node):
-        if node.__class__.__name__.endswith("Stmt"):
-            self.steps += 1
-            if self.max_steps is not None and self.steps > self.max_steps:
-                raise RuntimeError(f"Execution exceeded maximum step limit ({self.max_steps})")
-        return super().visit(node)
+        kind = node.__class__.__name__
+        if not kind.endswith("Stmt"):
+            return super().visit(node)
+
+        self.steps += 1
+        if self.max_steps is not None and self.steps > self.max_steps:
+            raise RuntimeError(f"Execution exceeded maximum step limit ({self.max_steps})")
+
+        step = self.steps
+        self._notify("on_before_stmt", step, kind, getattr(node, "span", None), self.state)
+        result = super().visit(node)
+        self._notify("on_after_stmt", step, kind, self.state)
+        return result
 
     @staticmethod
     def _validate_initial_state(initial_state):
@@ -91,19 +102,24 @@ class Interpreter(Visitor):
         return not self.visit(target)
 
     def visit_assignstmt(self, node):
+        old_val = self.state.get(node.var)
         val = self.visit(node.expression)
         if type(val) is not int:
             raise RuntimeError(f"Cannot assign non-integer value to variable '{node.var}'")
         self.state[node.var] = val
+        self._notify("on_variable_change", self.steps, node.var, old_val, val, self.state)
 
     def visit_seqstmt(self, node):
         self.visit(node.left)
         self.visit(node.right)
 
     def visit_ifstmt(self, node):
+        step = self.steps
         cond = self.visit(node.condition)
         if type(cond) is not bool:
             raise RuntimeError("The condition of an if-statement must evaluate to a boolean")
+
+        self._notify("on_condition_eval", step, "if", getattr(node.condition, "span", None), cond, self.state)
 
         if cond:
             self.visit(node.then_action)
@@ -111,11 +127,15 @@ class Interpreter(Visitor):
             self.visit(node.else_action)
 
     def visit_whilestmt(self, node):
+        step = self.steps
         iteration = 0
         while True:
             cond = self.visit(node.condition)
             if type(cond) is not bool:
                 raise RuntimeError("The condition of a while-statement must evaluate to a boolean")
+
+            self._notify("on_condition_eval", step, "while", getattr(node.condition, "span", None), cond, self.state)
+
             if not cond:
                 break
 
@@ -140,5 +160,36 @@ class Interpreter(Visitor):
 
         self.state = self._validate_initial_state(initial_state)
         self.steps = 0
-        self.visit(program)
+        self._notify("on_execution_start", program, self.state)
+
+        status = "completed"
+        error = None
+        try:
+            self.visit(program)
+        except Exception as exc:
+            err_msg = str(exc)
+            if "step limit" in err_msg:
+                status = "failed_step_limit"
+            elif "iteration limit" in err_msg:
+                status = "failed_iteration_limit"
+            else:
+                status = "error"
+            error = err_msg
+            raise
+        finally:
+            self._notify("on_execution_end", self.steps, status, self.state, error)
+
         return self.state
+
+    def attach_observer(self, observer):
+        self._observers.append(observer)
+
+    def detach_observer(self, observer):
+        if observer in self._observers:
+            self._observers.remove(observer)
+
+    def _notify(self, method, *args, **kwargs):
+        for observer in self._observers:
+            func = getattr(observer, method, None)
+            if func is not None:
+                func(*args, **kwargs)

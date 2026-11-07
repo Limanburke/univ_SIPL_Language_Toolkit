@@ -22,6 +22,16 @@ class SourceSpan:
                 self.start_position == other.start_position and
                 self.end_position == other.end_position)
 
+    def to_dict(self):
+        return {
+            "start_line": self.start_line,
+            "start_column": self.start_column,
+            "end_line": self.end_line,
+            "end_column": self.end_column,
+            "start_position": self.start_position,
+            "end_position": self.end_position
+        }
+
 
 class Node:
     def __init__(self, span=None):

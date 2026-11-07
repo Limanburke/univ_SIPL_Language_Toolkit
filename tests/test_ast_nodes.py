@@ -104,3 +104,14 @@ def test_program_repr_and_inequality():
     assert "Program" in repr(prog)
     assert prog != "program"
     assert prog != Program(AssignStmt("x", Number(1)))
+
+def test_source_span_to_dict():
+    span = SourceSpan(1, 2, 3, 4, 10, 20)
+    assert span.to_dict() == {
+        "start_line": 1,
+        "start_column": 2,
+        "end_line": 3,
+        "end_column": 4,
+        "start_position": 10,
+        "end_position": 20,
+    }
