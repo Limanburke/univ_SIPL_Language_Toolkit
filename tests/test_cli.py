@@ -154,3 +154,15 @@ def test_snippet_limit_and_empty():
     res = snippet(long_code, span, limit=20)
     assert len(res) == 20
     assert res.endswith("...")
+
+def test_term_command_text_and_json(tmp_path, capsys):
+    f = write_file(tmp_path, "begin x := y + 1 end")
+    assert main(["term", f]) == 0
+    assert "AS^x(S^2(add, y=>, 1))" in capsys.readouterr().out
+
+    code, data = run_cli_json(capsys, ["term", f])
+    assert code == 0
+    assert data["status"] == "ok"
+    assert data["notation"] == "AS^x(S^2(add, y=>, 1))"
+    assert data["term"]["type"] == "Assign"
+    assert data["term"]["rule"] == "NS_Stm_As"

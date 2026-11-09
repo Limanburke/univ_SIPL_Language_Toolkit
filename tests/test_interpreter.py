@@ -1,6 +1,6 @@
 import pytest
 from src.sipl.parser import parse
-from src.sipl.interpreter import Interpreter
+from src.sipl.interpreter.interpreter import Interpreter
 from src.sipl.ast import (
     Node, Program, AssignStmt, IfStmt, WhileStmt,
     Number, BinaryOperation, CompareOperation, SkipStmt

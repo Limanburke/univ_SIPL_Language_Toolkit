@@ -1,0 +1,1 @@
+IF(S^2(or, S^1(neg, S^2(eq, x=>, 0)), S^2(gr, y=>, 0)), AS^flag(1), AS^flag(0))

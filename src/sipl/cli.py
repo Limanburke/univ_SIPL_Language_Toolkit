@@ -2,9 +2,10 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from src.sipl.interpreter import Interpreter
+from src.sipl.interpreter.interpreter import Interpreter
 from src.sipl.observer import ExecutionTraceObserver
 from src.sipl.parser import SIPLSyntaxError, parse
+from src.sipl.semantics.builder import build_term
 
 HIDDEN_STMTS = {"SeqStmt", "BlockStmt"}
 
@@ -145,6 +146,19 @@ def handle_run(args):
     return {"status": "completed", "state": final_state}, "\n".join(lines), EXIT_SUCCESS
 
 
+def handle_term(args):
+    code = read_source(args.file)
+    prog = parse(code)
+    term = build_term(prog)
+    text_view = str(term)
+    payload = {
+        "status": "ok",
+        "notation": text_view,
+        "term": term.to_dict(),
+    }
+    return payload, text_view, EXIT_SUCCESS
+
+
 def create_cli_parser():
     parser = argparse.ArgumentParser(
         prog="sipl",
@@ -166,6 +180,7 @@ def create_cli_parser():
     subparsers.add_parser("check", parents=[base_args], help="Validate syntax").set_defaults(handler=handle_check)
     subparsers.add_parser("run", parents=[base_args, runtime_args], help="Execute program").set_defaults(handler=handle_run)
     subparsers.add_parser("trace", parents=[base_args, runtime_args], help="Execute and show trace").set_defaults(handler=handle_trace)
+    subparsers.add_parser("term", parents=[base_args], help="Build and show semantic term").set_defaults(handler=handle_term)
 
     return parser
 
