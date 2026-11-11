@@ -1,6 +1,6 @@
 import pytest
 from lark import Tree, Token
-from lark.exceptions import UnexpectedToken
+from lark.exceptions import UnexpectedToken, UnexpectedInput
 from unittest.mock import patch
 from src.sipl.parser import parse, SIPLSyntaxError, _make_span, build_ast
 from src.sipl.ast import (
@@ -8,6 +8,7 @@ from src.sipl.ast import (
     IfStmt, WhileStmt, SkipStmt, LogicalOrNode, NotNode, CompareOperation,
     BlockStmt, SeqStmt, SourceSpan
 )
+
 
 def test_ast_simple_assignment():
     code = "begin x := 1 end"
@@ -105,14 +106,11 @@ def test_logical_or_node():
 
 
 def test_logical_not():
-        code = (
-            f"begin if not (x > 0) "
-            "then skip else skip end"
-        )
-        ast = parse(code)
-        condition = ast.statement.condition
-        assert isinstance(condition, NotNode)
-        assert isinstance(condition.expression, CompareOperation)
+    code = "begin if not (x > 0) then skip else skip end"
+    ast = parse(code)
+    condition = ast.statement.condition
+    assert isinstance(condition, NotNode)
+    assert isinstance(condition.expression, CompareOperation)
 
 
 def test_nested_if_statement():
@@ -212,8 +210,7 @@ def test_missing_end_reports_syntax_error():
     with pytest.raises(SIPLSyntaxError) as exc_info:
         parse("begin skip")
     error = exc_info.value
-    assert error.line is not None
-    assert error.column is not None
+    assert (error.line, error.column) == (1, 11)
     assert "Syntax error" in str(error)
 
 
@@ -273,7 +270,7 @@ def test_unexpected_token_diagnostics():
             parse(code)
     err_msg = str(exc_info.value)
     assert "Unexpected token 'y'" in err_msg
-    assert "Expected one of: END, SEMICOLON" in err_msg
+    assert "Expected one of: ';', 'end'" in err_msg
     assert exc_info.value.line == 1
     assert exc_info.value.column == 14
 
@@ -296,11 +293,77 @@ def test_unexpected_token_eof_diagnostics():
             parse(code)
     err_msg = str(exc_info.value)
     assert "Unexpected token EOF" in err_msg
-    assert "Expected one of: END" in err_msg
+    assert "Expected one of: 'end'" in err_msg
 
 
 def test_parse_fails_to_produce_program_node():
-    from unittest.mock import patch
     with patch("src.sipl.parser.build_ast", return_value=SkipStmt()):
         with pytest.raises(RuntimeError, match="Parser failed to produce a valid root Program node"):
             parse("begin skip end")
+
+
+def test_eof_error_has_real_position_not_minus_one():
+    with pytest.raises(SIPLSyntaxError) as exc_info:
+        parse("begin")
+    err = exc_info.value
+    assert (err.line, err.column) == (1, 6)
+    assert "line 1, column 6" in str(err)
+    assert "-1" not in str(err)
+    assert "Unexpected end of file" in str(err)
+    assert "Expected one of: 'begin', 'if', 'skip', 'while', identifier" in str(err)
+
+
+def test_eof_error_position_on_last_line_of_multiline_code():
+    code = "begin\n  x := 1;\n  y := 2"
+    with pytest.raises(SIPLSyntaxError) as exc_info:
+        parse(code)
+    err = exc_info.value
+    assert (err.line, err.column) == (3, 9)
+    assert str(err).endswith("  y := 2\n" + " " * 8 + "^")
+
+
+def test_eof_error_ignores_trailing_whitespace_and_handles_empty_input():
+    with pytest.raises(SIPLSyntaxError) as exc_info:
+        parse("begin skip  \n\n")
+    assert (exc_info.value.line, exc_info.value.column) == (1, 11)
+
+    for blank in ("", "   \n"):
+        with pytest.raises(SIPLSyntaxError) as exc_info:
+            parse(blank)
+        assert (exc_info.value.line, exc_info.value.column) == (1, 1)
+
+
+def test_unknown_error_position_is_reported_as_end_of_input():
+    class Bare(UnexpectedInput):
+        line = -1
+        column = -1
+
+        def __init__(self):
+            pass
+
+    with patch("src.sipl.parser.parser.parse", side_effect=Bare()):
+        with pytest.raises(SIPLSyntaxError) as exc_info:
+            parse("begin")
+    err = exc_info.value
+    assert err.line is None and err.column is None
+    assert "end of input" in str(err) and "-1" not in str(err)
+
+
+VALID_PROGRAMS = [
+    "begin x := 1 end",
+    "begin\n  R := 1;\n  while Y > 0 do\n  begin\n    R := R * X;\n    Y := Y - 1\n  end\nend",
+    "begin if not (x = 0) or y > 0 then f := 1 else f := 0 end",
+]
+
+
+@pytest.mark.parametrize("program", VALID_PROGRAMS)
+def test_every_truncated_prefix_reports_a_valid_position(program):
+    for cut in range(len(program)):
+        prefix = program[:cut]
+        try:
+            parse(prefix)
+        except SIPLSyntaxError as err:
+            lines = prefix.count("\n") + 1
+            assert err.line is not None and 1 <= err.line <= lines, (prefix, err.line)
+            assert err.column is not None and err.column >= 1, (prefix, err.column)
+            assert "-1" not in str(err), prefix

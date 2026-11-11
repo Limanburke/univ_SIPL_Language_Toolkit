@@ -6,6 +6,8 @@ from src.sipl.interpreter.interpreter import Interpreter
 from src.sipl.observer import ExecutionTraceObserver
 from src.sipl.parser import SIPLSyntaxError, parse
 from src.sipl.semantics.builder import build_term
+from src.sipl.semantics.term_eval import TermEvaluator
+from src.sipl.semantics.sem_observer import  SemanticTraceObserver
 
 HIDDEN_STMTS = {"SeqStmt", "BlockStmt"}
 
@@ -15,6 +17,7 @@ EXIT_SUCCESS = 0
 EXIT_RUNTIME_ERROR = 1
 EXIT_USAGE_ERROR = 2
 EXIT_SYNTAX_ERROR = 3
+EXIT_UNDEFINED = 4
 
 def read_source(filepath):
     path = Path(filepath)
@@ -169,6 +172,9 @@ def create_cli_parser():
     base_args.add_argument("file", help="Path to .sipl script")
     base_args.add_argument("--json", action="store_true", help="Output result as JSON")
 
+    eval_args = argparse.ArgumentParser(add_help=False)
+    eval_args.add_argument("--no-trace", action="store_true", help="Print only the result, without the rule trace")
+
     runtime_args = argparse.ArgumentParser(add_help=False)
     runtime_args.add_argument("--var", action="append", metavar="NAME=INT", help="Initial variable value")
     runtime_args.add_argument("--max-steps", type=int, default=1_000_000, help="Global step execution limit")
@@ -181,8 +187,63 @@ def create_cli_parser():
     subparsers.add_parser("run", parents=[base_args, runtime_args], help="Execute program").set_defaults(handler=handle_run)
     subparsers.add_parser("trace", parents=[base_args, runtime_args], help="Execute and show trace").set_defaults(handler=handle_trace)
     subparsers.add_parser("term", parents=[base_args], help="Build and show semantic term").set_defaults(handler=handle_term)
+    subparsers.add_parser("eval", parents=[base_args, runtime_args, eval_args], help="Evaluate semantic term on a state").set_defaults(handler=handle_eval)
 
     return parser
+
+def format_rule_trace(events):
+    lines = []
+    for e in events:
+        kind = e["event"]
+        pad = "  " * e.get("depth", 0)
+
+        if kind == "eval_start":
+            lines.append(f"start  term={e['term']}  state={e['state']}")
+
+        elif kind == "rule_applied":
+            term = e["term"]
+            if e["kind"] == "stmt":
+                outcome = f"{e['state_before']} -> {e['state_after']}"
+            else:
+                outcome = f"=> {e['value']}"
+            lines.append(f"{pad}{e['rule']}  {term}  {outcome}")
+
+        elif kind == "loop_check":
+            lines.append(f"{pad}{e['rule']}  loop check #{e['iteration']}: condition is {e['condition']}")
+
+        elif kind == "eval_end":
+            if e["status"] == "defined":
+                lines.append(f"result: defined  state={e['state']}  ({e['steps']} rule applications)")
+            else:
+                lines.append(f"result: undefined ({e['reason']}) - {e['message']}")
+
+    return "\n".join(lines)
+
+def handle_eval(args):
+    code = read_source(args.file)
+    prog = parse(code)
+    term = build_term(prog)
+    initial_vars = parse_initial_state(args.var)
+
+    observer = None if args.no_trace else SemanticTraceObserver()
+    evaluator = TermEvaluator(
+        observer=observer,
+        max_steps=args.max_steps,
+        max_iterations=args.max_iterations,
+    )
+    result = evaluator.evaluate(term, initial_state=initial_vars)
+
+    payload = {"term": str(term), **result.to_dict()}
+    if observer is not None:
+        payload["events"] = observer.to_list()
+        text_view = format_rule_trace(observer.to_list())
+    elif result.defined:
+        text_view = f"defined  state={result.state}"
+    else:
+        text_view = f"undefined ({result.reason}) - {result.message}"
+
+    exit_code = EXIT_SUCCESS if result.defined else EXIT_UNDEFINED
+    return payload, text_view, exit_code
 
 
 def main(argv=None):

@@ -1,6 +1,6 @@
 from lark import Lark, Token, Tree
 from pathlib import Path
-from lark.exceptions import UnexpectedInput, UnexpectedToken, UnexpectedCharacters
+from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
 from src.sipl.ast import (
     Number, BinaryOperation, SourceSpan, Variable, CompareOperation,
     LogicalOrNode, NotNode, AssignStmt, SeqStmt, IfStmt,
@@ -105,27 +105,70 @@ def load_grammar(file_path):
 
 parser = load_grammar(grammar_path)
 
+def _token_label(token):
+    name = str(token)
+    if name.startswith("__ANON") or name == ":=":
+        return "':='"
+    elif name == "SEMICOLON":
+        return "';'"
+    elif name == "VAR":
+        return "identifier"
+    elif name == "NUMBER":
+        return "number"
+    elif name.startswith("_"):
+        return name
+    return f"'{name.lower()}'" if name.isupper() else str(name)
+
+
+def _expected_labels(expected):
+    return sorted({_token_label(name) for name in expected})
+
+
+def _eof_position(code):
+    pos = len(code.rstrip())
+    line = code.count("\n", 0, pos) + 1
+    column = pos - (code.rfind("\n", 0, pos) + 1) + 1
+    return line, column, pos
+
+
+def _eof_context(code, pos):
+    line_start = code.rfind("\n", 0, pos) + 1
+    return f"{code[line_start:pos]}\n{' ' * (pos - line_start)}^"
+
+
 def parse(code) -> Program:
     try:
         raw_tree = parser.parse(code)
     except UnexpectedInput as err:
         line = getattr(err, "line", None)
         column = getattr(err, "column", None)
-        location_str = f"line {line}, column {column}" if line and column else "end of input"
+        context = None
 
-        if isinstance(err, UnexpectedToken):
+        if isinstance(err, UnexpectedEOF):
+            line, column, pos = _eof_position(code)
+            context = _eof_context(code, pos)
+            msg = "Unexpected end of file"
+            expected_tokens = _expected_labels(err.expected)
+            if expected_tokens:
+                msg += f". Expected one of: {', '.join(expected_tokens)}"
+        elif isinstance(err, UnexpectedToken):
             token_val = repr(str(err.token)) if err.token.type != "$END" else "EOF"
-            expected_tokens = sorted(err.expected)
+            expected_tokens = _expected_labels(err.expected)
             msg = f"Unexpected token {token_val}"
             if expected_tokens:
-                msg += f" Expected one of: {', '.join(expected_tokens)}"
+                msg += f". Expected one of: {', '.join(expected_tokens)}"
         elif isinstance(err, UnexpectedCharacters):
             char = repr(code[err.pos_in_stream]) if err.pos_in_stream < len(code) else "EOF"
             msg = f"Unexpected character {char}"
         else:
             msg = "Unexpected end of file"
 
-        context = err.get_context(code, span=35).rstrip()
+        if line is None or column is None or line < 1 or column < 1:
+            line = column = None
+        location_str = f"line {line}, column {column}" if line is not None else "end of input"
+
+        if context is None:
+            context = err.get_context(code, span=35).rstrip()
         error_message = f"Syntax error at {location_str}: {msg}\n{context}"
         raise SIPLSyntaxError(error_message, line=line, column=column) from err
 

@@ -166,3 +166,57 @@ def test_term_command_text_and_json(tmp_path, capsys):
     assert data["notation"] == "AS^x(S^2(add, y=>, 1))"
     assert data["term"]["type"] == "Assign"
     assert data["term"]["rule"] == "NS_Stm_As"
+
+
+def test_eval_defined_text_and_json(tmp_path, capsys):
+    f = write_file(tmp_path, "begin x := x + 1 end")
+    assert main(["eval", f, "--var", "x=2"]) == 0
+    out = capsys.readouterr().out
+    assert "NS_A_Add" in out and "NS_Stm_As" in out
+    assert "result: defined  state={'x': 3}" in out
+
+    code, data = run_cli_json(capsys, ["eval", f, "--var", "x=2"])
+    assert code == 0 and data["schema_version"] == 1
+    assert data["status"] == "defined" and data["state"] == {"x": 3}
+    assert data["term"] == "AS^x(S^2(add, x=>, 1))"
+    assert [e["event"] for e in data["events"]][0] == "eval_start"
+
+
+def test_eval_undefined_uses_dedicated_exit_code(tmp_path, capsys):
+    loop = write_file(tmp_path, "begin while 1 = 1 do skip end", name="loop.sipl")
+    assert main(["eval", loop, "--max-iterations", "2"]) == 4
+    out = capsys.readouterr().out
+    assert "loop check #2: condition is True" in out
+    assert "result: undefined (iteration_limit)" in out
+
+    code, data = run_cli_json(capsys, ["eval", loop, "--max-iterations", "2"])
+    assert code == 4 and data["status"] == "undefined"
+    assert data["reason"] == "iteration_limit" and data["state"] is None
+
+
+def test_eval_no_trace_and_unassigned_variable(tmp_path, capsys):
+    f = write_file(tmp_path, "begin y := x + 1 end")
+    assert main(["eval", f, "--var", "x=1", "--no-trace"]) == 0
+    assert capsys.readouterr().out.strip() == "defined  state={'x': 1, 'y': 2}"
+
+    assert main(["eval", f, "--no-trace"]) == 4
+    assert "undefined (unassigned_variable)" in capsys.readouterr().out
+
+    code, data = run_cli_json(capsys, ["eval", f, "--no-trace"])
+    assert code == 4 and "events" not in data
+
+
+def test_eval_errors(tmp_path, capsys):
+    assert main(["eval", write_file(tmp_path, "begin x := end")]) == 3
+    assert main(["eval", write_file(tmp_path, "begin skip end", "ok.sipl"), "--var", "x=abc"]) == 1
+
+
+def test_check_unexpected_eof_reports_positive_position(tmp_path, capsys):
+    f = write_file(tmp_path, "begin")
+    code, data = run_cli_json(capsys, ["check", f])
+    assert code == 3 and data["status"] == "syntax_error"
+    assert (data["line"], data["column"]) == (1, 6)
+    assert "-1" not in data["error"]
+
+    assert main(["check", f]) == 3
+    assert "line 1, column 6" in capsys.readouterr().err
