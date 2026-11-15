@@ -249,7 +249,7 @@ def test_unexpected_character_diagnostics():
         parse(code)
     err_msg = str(exc_info.value)
     assert "Syntax error at line 1, column 14" in err_msg
-    assert "Unexpected character 'y'" in err_msg
+    assert "Unexpected token 'y'" in err_msg
 
 
 def test_unexpected_token_diagnostics():
@@ -264,7 +264,7 @@ def test_unexpected_token_diagnostics():
         end_column=15,
         end_pos=14,
     )
-    lark_error = UnexpectedToken(token, expected={"END", "SEMICOLON"})
+    lark_error = UnexpectedToken(token, expected={"_END", "SEMICOLON"})
     with patch("src.sipl.parser.parser.parse", side_effect=lark_error):
         with pytest.raises(SIPLSyntaxError) as exc_info:
             parse(code)
@@ -287,7 +287,7 @@ def test_unexpected_token_eof_diagnostics():
         end_column=len(code) + 1,
         end_pos=len(code),
     )
-    lark_error = UnexpectedToken(token, expected={"END"})
+    lark_error = UnexpectedToken(token, expected={"_END"})
     with patch("src.sipl.parser.parser.parse", side_effect=lark_error):
         with pytest.raises(SIPLSyntaxError) as exc_info:
             parse(code)
@@ -374,3 +374,26 @@ def test_eof_error_lists_operators_as_symbols_not_token_names():
     msg = str(exc_info.value)
     assert "Expected one of: ')', '*', '+', '-'" in msg
     assert "rpar" not in msg and "plus" not in msg and "star" not in msg and "minus" not in msg
+
+def test_unexpected_keyword_is_reported_as_a_whole_word():
+    with pytest.raises(SIPLSyntaxError) as exc_info:
+        parse("begin end := 1 end")
+    err = exc_info.value
+    assert (err.line, err.column) == (1, 7)
+    assert "Unexpected token 'end'" in str(err)
+
+    with pytest.raises(SIPLSyntaxError) as exc_info:
+        parse("begin x := @ end")
+    assert "Unexpected character '@'" in str(exc_info.value)
+
+def test_unexpected_characters_at_eof_stream():
+    from lark.exceptions import UnexpectedCharacters
+    code = "begin"
+    lark_err = UnexpectedCharacters(seq=code, lex_pos=0, line=1, column=6)
+    lark_err.pos_in_stream = len(code)
+    with patch("src.sipl.parser.parser.parse", side_effect=lark_err):
+        with pytest.raises(SIPLSyntaxError) as exc_info:
+            parse(code)
+    err = exc_info.value
+    assert "Unexpected token EOF" in str(err)
+    assert (err.line, err.column) == (1, 6)

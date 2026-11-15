@@ -107,12 +107,18 @@ def load_grammar(file_path):
 parser = load_grammar(grammar_path)
 
 REGEX_TERMINAL_LABELS = {"VAR": "identifier", "NUMBER": "number"}
+KEYWORD_TERMINALS = {
+    "_BEGIN", "_END", "_IF", "_THEN", "_ELSE",
+    "_WHILE", "_DO", "_SKIP", "_OR", "_NOT"
+}
 
 def build_terminal_labels(lark_parser):
     labels = {}
     for terminal in lark_parser.terminals:
         if isinstance(terminal.pattern, PatternStr):
             labels[terminal.name] = f"'{terminal.pattern.value}'"
+        elif terminal.name in KEYWORD_TERMINALS:
+            labels[terminal.name] = f"'{terminal.name.lstrip('_').lower()}'"
         else:
             labels[terminal.name] = REGEX_TERMINAL_LABELS.get(terminal.name, terminal.name)
     return labels
@@ -157,8 +163,16 @@ def parse(code) -> Program:
             if expected_tokens:
                 msg += f". Expected one of: {', '.join(expected_tokens)}"
         elif isinstance(err, UnexpectedCharacters):
-            char = repr(code[err.pos_in_stream]) if err.pos_in_stream < len(code) else "EOF"
-            msg = f"Unexpected character {char}"
+            pos = err.pos_in_stream
+            if pos < len(code):
+                end = pos
+                while end < len(code) and (code[end].isalnum() or code[end] == "_"):
+                    end += 1
+                lexeme = code[pos:max(end, pos + 1)]
+                kind = "token" if len(lexeme) > 1 or lexeme.isalnum() or lexeme == "_" else "character"
+                msg = f"Unexpected {kind} {repr(lexeme)}"
+            else:
+                msg = "Unexpected token EOF"
         else:
             msg = "Unexpected end of file"
 

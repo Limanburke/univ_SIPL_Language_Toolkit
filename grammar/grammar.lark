@@ -1,41 +1,50 @@
-?prog: "begin" stm "end" -> program
+?prog: _BEGIN stm _END -> program
 
-?stm: seq_stm
-    | base_stm
-
-?seq_stm: stm ";" base_stm -> sequential_execution
+?stm: base_stm
+    | stm ";" base_stm -> sequential_execution
 
 ?base_stm: VAR ":=" aexp -> assignment
-         | "if" bexp "then" base_stm "else" base_stm -> if_statement
-         | "while" bexp "do" base_stm -> while_cycle
-         | "begin" stm "end" -> block
-         | "skip" -> skip
+         | _IF bexp _THEN base_stm _ELSE base_stm -> if_statement
+         | _WHILE bexp _DO base_stm -> while_cycle
+         | _BEGIN stm _END -> block
+         | _SKIP -> skip
 
-?aexp: aexp "+" product  -> add
-     | aexp "-" product  -> sub
-     | product
+?aexp: aexp "+" term -> add
+     | aexp "-" term -> sub
+     | term
 
-?product: product "*" term -> mult
-        | term
+?term: term "*" factor -> mult
+     | factor
 
-?term: NUMBER -> number
-     | VAR -> variable
-     | "(" aexp ")" -> paren_expr
+?factor: NUMBER -> number
+       | VAR -> variable
+       | "(" aexp ")" -> paren_expr
 
 ?bexp: or_bexp
 
-?or_bexp: or_bexp "or" not_bexp -> logic_or
+?or_bexp: or_bexp _OR not_bexp -> logic_or
         | not_bexp
 
-?not_bexp: "not" not_bexp -> logic_not
+?not_bexp: _NOT not_bexp -> logic_not
          | comp_bexp
 
 ?comp_bexp: aexp "=" aexp -> eq
           | aexp ">" aexp -> gr
           | "(" bexp ")" -> paren_cond
 
-VAR: /(?!(?:begin|end|if|then|else|while|do|skip|or|not)\b)[A-Za-z_][A-Za-z0-9_]*/
+_BEGIN: /\bbegin\b/
+_END: /\bend\b/
+_IF: /\bif\b/
+_THEN: /\bthen\b/
+_ELSE: /\belse\b/
+_WHILE: /\bwhile\b/
+_DO: /\bdo\b/
+_SKIP: /\bskip\b/
+_OR: /\bor\b/
+_NOT: /\bnot\b/
+
 NUMBER: /-?[0-9]+/
+VAR.1: /(?!\b(?:begin|end|if|then|else|while|do|skip|or|not)\b)[A-Za-z_][A-Za-z0-9_]*/
 
 %import common.WS
 %ignore WS

@@ -119,3 +119,23 @@ INVALID_STRUCTURES = [
 def test_invalid_syntax_structures(code):
     with pytest.raises(UnexpectedInput):
         parser.parse(code)
+
+GLUED_KEYWORDS = [
+    "beginx := 1 end",
+    "begin x := 1end",
+    "begin ifx > 0 then skip else skip end",
+    "begin if x > 0thenskip else skip end",
+    "begin whilex > 0 do skip end",
+    "begin skipx end",
+]
+
+
+@pytest.mark.parametrize("code", GLUED_KEYWORDS)
+def test_keywords_need_word_boundaries(code):
+    with pytest.raises(UnexpectedInput):
+        parser.parse(code)
+
+
+def test_identifiers_may_start_with_a_keyword():
+    for name in ("endx", "if_", "begin1", "do2"):
+        assert parser.parse(f"begin {name} := 1 end") is not None
