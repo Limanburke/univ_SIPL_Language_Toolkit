@@ -1,0 +1,12 @@
+begin
+  A := 0;
+  B := 1;
+  while N > 1 do
+  begin
+    C := A + B;
+    A := B;
+    B := C;
+    N := N - 1
+  end;
+  R := B
+end
