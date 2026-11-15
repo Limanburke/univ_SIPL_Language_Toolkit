@@ -220,3 +220,20 @@ def test_check_unexpected_eof_reports_positive_position(tmp_path, capsys):
 
     assert main(["check", f]) == 3
     assert "line 1, column 6" in capsys.readouterr().err
+
+def test_runtime_error_reports_position(tmp_path, capsys):
+    f = write_file(tmp_path, "begin\n  x := y\nend")
+    code, data = run_cli_json(capsys, ["run", f])
+    assert code == 1 and data["status"] == "error"
+    assert (data["line"], data["column"]) == (2, 8)
+    assert data["error"].endswith("at line 2, column 8")
+
+    assert main(["run", f]) == 1
+    assert "referenced before assignment at line 2, column 8" in capsys.readouterr().err
+
+    code, data = run_cli_json(capsys, ["eval", f])
+    assert code == 4 and data["span"]["start_line"] == 2
+    assert "at line 2, column 8" in data["message"]
+
+    code, data = run_cli_json(capsys, ["run", str(tmp_path / "missing.sipl")])
+    assert code == 1 and "line" not in data

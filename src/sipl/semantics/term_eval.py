@@ -1,26 +1,30 @@
 from src.sipl.semantics.builder import build_term
 from src.sipl.semantics.terms import Term, Id, Assign, Comp, If, While, Paren
 from src.sipl.visitor import Visitor
+from src.sipl.errors import with_location
 
 
 class SIPLSemanticError(Exception):
-    def __init__(self, reason, message):
+    def __init__(self, reason, message, span=None):
+        message = with_location(message, span)
         super().__init__(message)
         self.reason = reason
         self.message = message
+        self.span = span
 
 
 class EvaluationResult:
     DEFINED = "defined"
     UNDEFINED = "undefined"
 
-    def __init__(self, status, state=None, reason=None, message=None, steps=0):
+    def __init__(self, status, state=None, reason=None, message=None, steps=0, span=None):
         self.status = status
         self.state = state
         self.reason = reason
         self.message = message
         self.steps = steps
         self.defined = (status == self.DEFINED)
+        self.span = span
 
     def to_dict(self):
         return {
@@ -28,7 +32,8 @@ class EvaluationResult:
             "state": self.state,
             "reason": self.reason,
             "message": self.message,
-            "steps": self.steps
+            "steps": self.steps,
+            "span": self.span.to_dict() if self.span else None
         }
 
     def __repr__(self):
@@ -107,7 +112,7 @@ class TermEvaluator(Visitor):
             self._depth -= 1
 
         if self.max_steps is not None and self.steps >= self.max_steps:
-            raise SIPLSemanticError("step_limit", f"Evaluation exceeded maximum step limit ({self.max_steps})")
+            raise SIPLSemanticError("step_limit", f"Evaluation exceeded maximum step limit ({self.max_steps})", term.span)
         self.steps += 1
 
         self._notify(
@@ -147,7 +152,7 @@ class TermEvaluator(Visitor):
 
     def visit_name(self, term):
         if term.name not in self.state:
-            raise SIPLSemanticError("unassigned_variable", f"Variable '{term.name}' is not assigned in the state")
+            raise SIPLSemanticError("unassigned_variable", f"Variable '{term.name}' is not assigned in the state", term.span)
         return self.state[term.name]
 
     def visit_apply(self, term):
@@ -218,7 +223,8 @@ class TermEvaluator(Visitor):
             if self.max_iterations is not None and iteration > self.max_iterations:
                 raise SIPLSemanticError(
                     "iteration_limit",
-                    f"Loop did not terminate within {self.max_iterations} iterations"
+                    f"Loop did not terminate within {self.max_iterations} iterations",
+                    term.span
                 )
             self.visit(term.do_action)
 
@@ -247,7 +253,8 @@ class TermEvaluator(Visitor):
                 None,
                 undefined.reason,
                 undefined.message,
-                self.steps
+                self.steps,
+                undefined.span,
             )
             status = result.status
             reason = result.reason

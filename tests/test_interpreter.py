@@ -3,7 +3,7 @@ from src.sipl.parser import parse
 from src.sipl.interpreter.interpreter import Interpreter
 from src.sipl.ast import (
     Node, Program, AssignStmt, IfStmt, WhileStmt,
-    Number, BinaryOperation, CompareOperation, SkipStmt
+    Number, BinaryOperation, CompareOperation, SkipStmt, Variable
 )
 
 class UnknownDummyNode(Node):
@@ -222,3 +222,26 @@ def test_while_condition_not_boolean():
     prog = Program(statement=WhileStmt(condition=Number(1), do_action=SkipStmt()))
     with pytest.raises(RuntimeError, match="The condition of a while-statement must evaluate to a boolean"):
         interp.execute(prog)
+
+def test_runtime_errors_carry_source_position():
+    code = "begin\n  x := 1;\n  y := z + 1\nend"
+    with pytest.raises(RuntimeError) as exc_info:
+        Interpreter().execute(parse(code))
+    err = exc_info.value
+    assert (err.line, err.column) == (3, 8)
+    assert str(err).endswith("referenced before assignment at line 3, column 8")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        Interpreter(max_iterations=2).execute(parse("begin\n  while 1 = 1 do skip\nend"))
+    assert (exc_info.value.line, exc_info.value.column) == (2, 3)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        Interpreter(max_steps=1).execute(parse("begin x := 1; y := 2 end"))
+    assert exc_info.value.line == 1 and "at line 1" in str(exc_info.value)
+
+
+def test_runtime_error_without_span_has_no_position():
+    with pytest.raises(RuntimeError) as exc_info:
+        Interpreter().execute(Program(statement=AssignStmt("x", Variable("y"))))
+    assert exc_info.value.line is None
+    assert str(exc_info.value) == "Variable 'y' is referenced before assignment"

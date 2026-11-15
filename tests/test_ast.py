@@ -367,3 +367,10 @@ def test_every_truncated_prefix_reports_a_valid_position(program):
             assert err.line is not None and 1 <= err.line <= lines, (prefix, err.line)
             assert err.column is not None and err.column >= 1, (prefix, err.column)
             assert "-1" not in str(err), prefix
+
+def test_eof_error_lists_operators_as_symbols_not_token_names():
+    with pytest.raises(SIPLSyntaxError) as exc_info:
+        parse("begin x := (0 + 1")
+    msg = str(exc_info.value)
+    assert "Expected one of: ')', '*', '+', '-'" in msg
+    assert "rpar" not in msg and "plus" not in msg and "star" not in msg and "minus" not in msg

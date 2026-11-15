@@ -1,6 +1,6 @@
 from src.sipl.ast import Program
 from src.sipl.visitor import Visitor
-
+from src.sipl.errors import SIPLRuntimeError
 
 class Interpreter(Visitor):
     def __init__(self, observer=None, max_steps=1_000_000, max_iterations=100_000):
@@ -24,7 +24,7 @@ class Interpreter(Visitor):
 
         self.steps += 1
         if self.max_steps is not None and self.steps > self.max_steps:
-            raise RuntimeError(f"Execution exceeded maximum step limit ({self.max_steps})")
+            raise SIPLRuntimeError(f"Execution exceeded maximum step limit ({self.max_steps})", node.span)
 
         step = self.steps
         self._notify("on_before_stmt", step, kind, getattr(node, "span", None), self.state)
@@ -56,7 +56,7 @@ class Interpreter(Visitor):
 
     def visit_variable(self, node):
         if node.name not in self.state:
-            raise RuntimeError(f"Variable '{node.name}' is referenced before assignment")
+            raise SIPLRuntimeError(f"Variable '{node.name}' is referenced before assignment", node.span)
         return self.state[node.name]
 
     def visit_binaryoperation(self, node):
@@ -133,7 +133,7 @@ class Interpreter(Visitor):
 
             iteration += 1
             if self.max_iterations is not None and iteration > self.max_iterations:
-                raise RuntimeError(f"Execution exceeded loop iteration limit ({self.max_iterations})")
+                raise SIPLRuntimeError(f"Execution exceeded loop iteration limit ({self.max_iterations})", node.span)
 
             self.visit(node.do_action)
 

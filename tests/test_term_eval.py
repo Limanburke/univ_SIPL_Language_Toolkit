@@ -8,7 +8,7 @@ from src.sipl.semantics.term_eval import (
     EvaluationResult, TermEvaluator, SIPLSemanticError, evaluate
 )
 from src.sipl.semantics.sem_observer import SemanticObserver, SemanticTraceObserver
-from src.sipl.semantics.terms import Apply, Assign, Const, Id, If, Name, While, Paren
+from src.sipl.semantics.terms import Apply, Assign, Const, Id, If, Term, While, Paren
 
 
 def run(code, state=None, **limits):
@@ -185,7 +185,7 @@ def test_step_limit_gives_undefined():
 def test_result_to_dict_and_repr():
     ok = evaluate(build_term(parse("begin x := 1 end")))
     bad = evaluate(build_term(parse("begin x := y end")))
-    assert ok.to_dict() == {"status": "defined", "state": {"x": 1}, "reason": None, "message": None, "steps": 2}
+    assert ok.to_dict() == {"status": "defined", "state": {"x": 1}, "reason": None, "message": None, "steps": 2, "span": None}
     assert bad.to_dict()["reason"] == "unassigned_variable"
     assert "defined" in repr(ok) and "undefined" in repr(bad)
 
@@ -291,3 +291,38 @@ def test_base_observer_and_detach_and_partial_observers():
     trace.events = []
     evaluator.evaluate(Paren(Id()))
     assert trace.events == []
+
+def test_undefined_result_points_to_source_position():
+    result, events = run("begin\n  x := y + 1\nend")
+    assert (result.span.start_line, result.span.start_column) == (2, 8)
+    assert result.message.endswith("is not assigned in the state at line 2, column 8")
+    assert result.to_dict()["span"]["start_line"] == 2
+    assert events[-1]["message"] == result.message
+
+    loop, _ = run("begin\n  while 1 = 1 do skip\nend", max_iterations=2)
+    assert loop.reason == "iteration_limit" and loop.span.start_line == 2
+
+    limited, _ = run("begin\n  while 1 = 1 do skip\nend", max_steps=5)
+    assert limited.reason == "step_limit" and limited.span is not None
+
+@pytest.mark.parametrize("func,args,expected_rule", [
+    ("add", (Const(1), Const(2)), "NS_A_Add"),
+    ("sub", (Const(3), Const(1)), "NS_A_Sub"),
+    ("mult", (Const(2), Const(3)), "NS_A_Mult"),
+    ("eq", (Const(1), Const(1)), "NS_B_eq"),
+    ("gr", (Const(2), Const(1)), "NS_B_gr"),
+    ("or", (Apply("eq", (Const(1), Const(1))), Apply("eq", (Const(1), Const(2)))), "NS_B_or"),
+    ("neg", (Apply("eq", (Const(1), Const(2))),), "NS_B_neg"),
+])
+def test_hand_built_apply_without_rule_gets_default_rules(func, args, expected_rule):
+    observer = SemanticTraceObserver()
+    term = Apply(func, args) if func in ("add", "sub", "mult") else If(Apply(func, args), Id(), Id())
+    evaluate(term, observer=observer)
+    assert expected_rule in rules(observer.events)
+
+
+def test_rule_of_returns_none_for_unknown_custom_term():
+    class CustomTerm(Term):
+        pass
+
+    assert TermEvaluator._rule_of(CustomTerm()) is None

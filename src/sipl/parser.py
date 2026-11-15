@@ -1,6 +1,7 @@
 from lark import Lark, Token, Tree
 from pathlib import Path
 from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
+from lark.lexer import PatternStr
 from src.sipl.ast import (
     Number, BinaryOperation, SourceSpan, Variable, CompareOperation,
     LogicalOrNode, NotNode, AssignStmt, SeqStmt, IfStmt,
@@ -105,23 +106,21 @@ def load_grammar(file_path):
 
 parser = load_grammar(grammar_path)
 
-def _token_label(token):
-    name = str(token)
-    if name.startswith("__ANON") or name == ":=":
-        return "':='"
-    elif name == "SEMICOLON":
-        return "';'"
-    elif name == "VAR":
-        return "identifier"
-    elif name == "NUMBER":
-        return "number"
-    elif name.startswith("_"):
-        return name
-    return f"'{name.lower()}'" if name.isupper() else str(name)
+REGEX_TERMINAL_LABELS = {"VAR": "identifier", "NUMBER": "number"}
 
+def build_terminal_labels(lark_parser):
+    labels = {}
+    for terminal in lark_parser.terminals:
+        if isinstance(terminal.pattern, PatternStr):
+            labels[terminal.name] = f"'{terminal.pattern.value}'"
+        else:
+            labels[terminal.name] = REGEX_TERMINAL_LABELS.get(terminal.name, terminal.name)
+    return labels
+
+TERMINAL_LABELS = build_terminal_labels(parser)
 
 def _expected_labels(expected):
-    return sorted({_token_label(name) for name in expected})
+    return sorted({TERMINAL_LABELS.get(str(name), str(name)) for name in expected})
 
 
 def _eof_position(code):

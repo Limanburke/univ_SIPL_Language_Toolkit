@@ -265,10 +265,11 @@ def main(argv=None):
         output_result(args, error_payload, err.message, is_error=True)
         return EXIT_SYNTAX_ERROR
     except (RuntimeError, OSError, ValueError) as err:
-        output_result(args,{
-                          "status": "error",
-                          "error": str(err)
-                      },f"Error: {err}", is_error=True)
+        error_payload = {"status": "error", "error": str(err)}
+        if getattr(err, "line", None) is not None:
+            error_payload["line"] = err.line
+            error_payload["column"] = err.column
+        output_result(args, error_payload, f"Error: {err}", is_error=True)
         return EXIT_RUNTIME_ERROR
 
     output_result(args, payload, text_view)
